@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Личный кабинет - CinemaPass</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <header id="main-nav"></header>
+    <main>
+        <div class="profile-container">
+            <section class="profile-sidebar">
+                <div class="avatar-wrapper">
+                    <img src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&h=150&q=80" alt="Аватар профиля" class="profile-avatar" id="avatar-img">
+                    <label for="avatar-input" class="avatar-upload-btn" title="Загрузить новое фото">
+                        <svg viewBox="0 0 24 24"><path d="M4 4h3l2-2h6l2 2h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2m8 3a5 5 0 0 0-5 5 5 5 0 0 0 5 5 5 5 0 0 0 5-5 5 5 0 0 0-5-5m0 2a3 3 0 0 1 3 3 3 3 0 0 1-3 3 3 3 0 0 1-3-3 3 3 0 0 1 3-3z"/></svg>
+                    </label>
+                    <input type="file" id="avatar-input" style="display: none;" accept=".jpg,.jpeg,.png">
+                </div>
+                <h3 class="profile-name" id="profile-fullname">Загрузка...</h3>
+                <p class="profile-username" id="profile-username">@loading</p>
+            </section>
+            <section class="profile-content">
+                <h2>Мои билеты</h2>
+                <div class="tickets-list" id="tickets-container">
+                    <div style="text-align: center; padding: 2rem; color: var(--text-muted);">Загрузка билетов...</div>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <script src="js/app.js"></script>
+    <script>
+        async function fetchProfile() {
+            try {
+                const data = await apiFetch("/profile");
+                renderProfile(data);
+            } catch (err) { showToast(err.message, "error"); }
+        }
+
+        function renderProfile(user) {
+            document.getElementById("profile-fullname").innerText = user.full_name;
+            document.getElementById("profile-username").innerText = `@${user.username}`;
+            document.getElementById("avatar-img").src = user.avatar_path ? `${API_URL}${user.avatar_path}` : "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&h=150&q=80";
+            renderTickets(user.tickets);
+        }
+
+        function renderTickets(tickets) {
+            const container = document.getElementById("tickets-container");
+            if (!tickets || tickets.length === 0) {
+                container.innerHTML = `<div class="no-tickets">Вы еще не приобрели ни одного билета</div>`;
+                return;
+            }
+            container.innerHTML = tickets.map(t => `
+                <div class="ticket-item">
+                    <div class="ticket-details">
+                        <div class="ticket-movie-title">${t.movie_title}</div>
+                        <div class="ticket-info">Сеанс: ${formatDate(t.show_date)} | Билетов: ${t.quantity} шт.</div>
+                    </div>
+                    <div class="ticket-price-status">
+                        <div class="ticket-total">${formatPrice(t.total_price)}</div>
+                        <span class="ticket-status ${t.status}">${t.status === "active" ? "Активен" : "Возвращен"}</span>
+                        ${t.status === "active" ? `<button class="btn-refund" onclick="refundTicket(${t.id})">Вернуть</button>` : ""}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function refundTicket(id) {
+            if (!confirm("Вы действительно хотите вернуть этот билет?")) return;
+            try {
+                await apiFetch(`/tickets/${id}/refund`, { method: "POST" });
+                showToast("Возврат билета успешно выполнен!", "success");
+                fetchProfile();
+            } catch (err) { showToast(err.message, "error"); }
+        }
+
+        async function uploadAvatar(file) {
+            const fd = new FormData();
+            fd.append("file", file);
+            try {
+                const data = await apiFetch("/profile/avatar", { method: "POST", body: fd });
+                showToast("Аватар успешно обновлен!", "success");
+                document.getElementById("avatar-img").src = `${API_URL}${data.avatar_path}`;
+            } catch (err) { showToast(err.message, "error"); }
+        }
+
+        document.addEventListener("DOMContentLoaded", () => {
+            fetchProfile();
+            document.getElementById("avatar-input").addEventListener("change", (e) => {
+                const file = e.target.files[0];
+                if (file) uploadAvatar(file);
+            });
+        });
+    </script>
+</body>
+</html>

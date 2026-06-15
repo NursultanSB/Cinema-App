@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Афиша фильмов - CinemaPass</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <header id="main-nav"></header>
+    <main>
+        <h1>Афиша кинотеатра</h1>
+        <section class="filter-bar">
+            <div class="filter-group">
+                <label for="genre-filter">Жанр</label>
+                <select id="genre-filter" class="filter-select">
+                    <option value="">Все жанры</option>
+                    <option value="1">Боевик (Action)</option>
+                    <option value="2">Комедия (Comedy)</option>
+                    <option value="3">Драма (Drama)</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label for="age-filter">Возрастной рейтинг</label>
+                <select id="age-filter" class="filter-select">
+                    <option value="">Все рейтинги</option>
+                    <option value="12">12+</option>
+                    <option value="16">16+</option>
+                    <option value="18">18+</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label for="sort-select">Сортировка</label>
+                <select id="sort-select" class="filter-select">
+                    <option value="">По умолчанию</option>
+                    <option value="price_asc">Цена: по возрастанию</option>
+                    <option value="price_desc">Цена: по убыванию</option>
+                </select>
+            </div>
+        </section>
+        <section class="movies-grid" id="movies-container"></section>
+    </main>
+
+    <div class="modal" id="buy-modal">
+        <div class="modal-content">
+            <button class="modal-close" id="modal-close-btn">&times;</button>
+            <h3 class="modal-title" id="modal-movie-title">Покупка билета</h3>
+            <div class="modal-summary">
+                <div class="modal-summary-item">
+                    <span>Цена за билет:</span>
+                    <span id="modal-ticket-price">0 ₸</span>
+                </div>
+                <div class="modal-summary-item">
+                    <span>Итоговая стоимость:</span>
+                    <span class="modal-total-price" id="modal-total-price">0 ₸</span>
+                </div>
+            </div>
+            <form id="purchase-form">
+                <input type="hidden" id="modal-movie-id">
+                <div class="form-group">
+                    <label for="show-date">Дата сеанса</label>
+                    <input type="date" id="show-date" class="form-control" required>
+                </div>
+                <div class="form-group">
+                    <label for="ticket-quantity">Количество билетов</label>
+                    <input type="number" id="ticket-quantity" class="form-control" value="1" min="1" required>
+                </div>
+                <button type="submit" class="btn-primary">Подтвердить покупку</button>
+            </form>
+        </div>
+    </div>
+
+    <script src="js/app.js"></script>
+    <script>
+        let movies = [], selected = null;
+        const genres = { 1: "Боевик", 2: "Комедия", 3: "Драма" };
+
+        async function loadMovies() {
+            const genre = document.getElementById("genre-filter").value;
+            const age = document.getElementById("age-filter").value;
+            const sort = document.getElementById("sort-select").value;
+            let q = [];
+            if (genre) q.push(`genre=${genre}`);
+            if (age) q.push(`age_rating=${age}`);
+            if (sort) q.push(`sort=${sort}`);
+            try {
+                movies = await apiFetch(`/movies${q.length ? '?' + q.join('&') : ''}`);
+                renderMovies();
+            } catch (err) { showToast(err.message, "error"); }
+        }
+
+        function renderMovies() {
+            const container = document.getElementById("movies-container");
+            container.innerHTML = movies.length ? movies.map(m => `
+                <div class="movie-card">
+                    <div class="movie-poster-wrapper">
+                        <img src="${m.poster_path ? `${API_URL}/${m.poster_path}` : 'images/posters/movie1.jpg'}" alt="${m.title}" class="movie-poster">
+                        <span class="movie-age-badge">${m.age_rating}+</span>
+                    </div>
+                    <div class="movie-info">
+                        <h3 class="movie-title">${m.title}</h3>
+                        <div class="movie-meta"><span class="movie-genre">${genres[m.genre] || "Другое"}</span></div>
+                        <p class="movie-description">${m.description || "Описание отсутствует."}</p>
+                        <div class="movie-footer">
+                            <span class="movie-price">${formatPrice(m.ticket_price)}</span>
+                            <button class="btn-buy" onclick="openBuyModal(${m.id})">Купить билет</button>
+                        </div>
+                    </div>
+                </div>
+            `).join('') : '<div style="grid-column: 1/-1; text-align: center; color: var(--text-muted); padding: 3rem;">Фильмы не найдены</div>';
+        }
+
+        function openBuyModal(id) {
+            if (!isAuthorized()) {
+                showToast("Пожалуйста, войдите в аккаунт для покупки билета", "error");
+                setTimeout(() => location.href = "login.html", 1200);
+                return;
+            }
+            selected = movies.find(m => m.id === id);
+            if (!selected) return;
+            document.getElementById("modal-movie-id").value = selected.id;
+            document.getElementById("modal-movie-title").innerText = `Покупка билета: ${selected.title}`;
+            document.getElementById("modal-ticket-price").innerText = formatPrice(selected.ticket_price);
+            
+            const today = new Date().toISOString().split("T")[0];
+            document.getElementById("show-date").min = today;
+            document.getElementById("show-date").value = today;
+            document.getElementById("ticket-quantity").value = 1;
+            updateTotalPrice();
+            document.getElementById("buy-modal").classList.add("open");
+        }
+
+        const closeBuyModal = () => document.getElementById("buy-modal").classList.remove("open");
+
+        function updateTotalPrice() {
+            if (!selected) return;
+            const q = parseInt(document.getElementById("ticket-quantity").value) || 1;
+            document.getElementById("modal-total-price").innerText = formatPrice(selected.ticket_price * q);
+        }
+
+        document.addEventListener("DOMContentLoaded", () => {
+            loadMovies();
+            ["genre-filter", "age-filter", "sort-select"].forEach(id => document.getElementById(id).addEventListener("change", loadMovies));
+            document.getElementById("modal-close-btn").addEventListener("click", closeBuyModal);
+            document.getElementById("buy-modal").addEventListener("click", (e) => { if (e.target.id === "buy-modal") closeBuyModal(); });
+            
+            const qty = document.getElementById("ticket-quantity");
+            qty.addEventListener("input", updateTotalPrice);
+            qty.addEventListener("change", updateTotalPrice);
+
+            document.getElementById("purchase-form").addEventListener("submit", async (e) => {
+                e.preventDefault();
+                const q = parseInt(qty.value);
+                const date = document.getElementById("show-date").value;
+                if (q < 1) return showToast("Количество билетов должно быть больше нуля", "error");
+                try {
+                    await apiFetch("/tickets", {
+                        method: "POST",
+                        body: { movie_id: selected.id, show_date: date, quantity: q }
+                    });
+                    showToast("Билет успешно приобретен!", "success");
+                    closeBuyModal();
+                } catch (err) { showToast(err.message, "error"); }
+            });
+        });
+    </script>
+</body>
+</html>
